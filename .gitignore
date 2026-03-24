@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.py[cod]
+*.class
+.venv/
+.vscode/
+data/
+code/simulation/data/
+code/exp
+code/making_dataset
+code/Mirofish
+
+notebook/
+
+code/simulation/.env
+code/simulation/src/archive
