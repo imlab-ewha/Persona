@@ -14,10 +14,13 @@ import pandas as pd
 from tqdm import tqdm
 import re
 
+
 from sqlalchemy import create_engine, text
 from src.persona import build_external_context_text, PARTIES
 from sshtunnel import SSHTunnelForwarder
+from dotenv import load_dotenv
 
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 # DB 설정
 SSH_HOST = os.getenv("SSH_HOST")
 SSH_PORT = int(os.getenv("SSH_PORT", 4040))

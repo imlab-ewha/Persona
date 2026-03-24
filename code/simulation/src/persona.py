@@ -79,7 +79,7 @@ EXTERNAL_LABELS = {
 }
 
 # ── 1. 페르소나 데이터 로딩 (동적 필터링) ──────────────────────────
-def load_demographic_data(engine, n_sample=None, random_seed=42, filter_condition=None, limit=None) -> pd.DataFrame:
+def load_demographic_data(n_sample=None, random_seed=42, filter_condition=None, limit=None) -> pd.DataFrame:
     """
     persona_profile 테이블에서 filter_condition에 맞는 데이터를 로드합니다.
     예: filter_condition="party_leaning IS NOT NULL"

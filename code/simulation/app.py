@@ -21,14 +21,14 @@ from sshtunnel import SSHTunnelForwarder
 # ⚙️ CONFIG (초기 설정)
 # ============================================================
 MODEL = "claude-sonnet-4-6" # 사용자가 지정한 모델명
-PROMPT_VER = "v5"
+PROMPT_VER = "v7"
 FILTER_CONDITION = "party_leaning IS NOT NULL"
 
 # 환경변수 로드 및 DB 엔진 설정
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 # DB 설정
-SSH_HOST = str(os.getenv("SSH_HOST"))
+SSH_HOST = os.getenv("SSH_HOST")
 SSH_PORT = int(os.getenv("SSH_PORT", 4040))
 SSH_USER = os.getenv("SSH_USER")
 SSH_PASSWORD = os.getenv("SSH_PASSWORD")
