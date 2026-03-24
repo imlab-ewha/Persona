@@ -16,50 +16,40 @@ from openai import OpenAI
 from anthropic import Anthropic
 from sshtunnel import SSHTunnelForwarder
 
+
 # ============================================================
 # ⚙️ CONFIG (초기 설정)
 # ============================================================
 MODEL = "claude-sonnet-4-6" # 사용자가 지정한 모델명
-PROMPT_VER = "v7"
+PROMPT_VER = "v5"
 FILTER_CONDITION = "party_leaning IS NOT NULL"
 
+# 환경변수 로드 및 DB 엔진 설정
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-# ============================================================
-# ⚙️ DB CONNECTION (환경별 자동 연결 설정)
-# ============================================================
-def get_db_engine():
-    # 1. Streamlit Cloud 배포 환경 (Secrets가 존재할 때)
-    if "SSH_HOST" in st.secrets:
-        tunnel = SSHTunnelForwarder(
-            (st.secrets["SSH_HOST"], int(st.secrets["SSH_PORT"])),
-            ssh_username=st.secrets["SSH_USER"],
-            ssh_password=st.secrets["SSH_PASSWORD"],
-            remote_bind_address=(st.secrets["DB_HOST"], int(st.secrets["DB_PORT"]))
-        )
-        tunnel.start()
-        
-        db_url = (
-            f"postgresql+psycopg2://{st.secrets['DB_USER']}:{st.secrets['DB_PASSWORD']}"
-            f"@127.0.0.1:{tunnel.local_bind_port}/{st.secrets['DB_NAME']}"
-        )
-        return create_engine(db_url), tunnel
-    
-    # 2. 로컬 개발 환경 (.env 사용)
-    else:
-        load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-        db_url = (
-            f"postgresql+psycopg2://{os.getenv('DB_USER')}@{os.getenv('DB_HOST')}:"
-            f"{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-        )
-        return create_engine(db_url), None
+# DB 설정
+SSH_HOST = str(os.getenv("SSH_HOST"))
+SSH_PORT = int(os.getenv("SSH_PORT", 4040))
+SSH_USER = os.getenv("SSH_USER")
+SSH_PASSWORD = os.getenv("SSH_PASSWORD")
 
-# 엔진과 터널 생성 (세션 내내 유지되도록 처리)
-if 'db_engine' not in st.session_state:
-    engine, tunnel = get_db_engine()
-    st.session_state.db_engine = engine
-    st.session_state.db_tunnel = tunnel
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.getenv("DB_PORT", 5432))
+DB_USER = os.getenv("DB_USER", "pdp")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
+DB_NAME = os.getenv("DB_NAME", "persona")
 
-engine = st.session_state.db_engine
+tunnel = SSHTunnelForwarder(
+    (SSH_HOST, SSH_PORT),
+    ssh_username=SSH_USER,
+    ssh_password=SSH_PASSWORD,
+    remote_bind_address=(DB_HOST, DB_PORT)
+)
+tunnel.start()
+
+engine = create_engine(
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@127.0.0.1:{tunnel.local_bind_port}/{DB_NAME}"
+)
 
 # LLM 클라이언트 준비
 if MODEL.startswith("claude"):
@@ -129,7 +119,7 @@ if run_btn:
     # 매핑된 키워드로 DB 필터링 (예: residence_region LIKE '%%부산%%')
     dynamic_filter = f"party_leaning IS NOT NULL AND residence_region LIKE '%%{region_keyword}%%'"
     
-    demo_df = load_demographic_data(engine, n_sample=None, random_seed=42, filter_condition=dynamic_filter, limit=num_personas)
+    demo_df = load_demographic_data(n_sample=None, random_seed=42, filter_condition=dynamic_filter, limit=num_personas)
     
     if demo_df.empty:
         st.error(f"조건에 맞는 {target_region} 페르소나가 없습니다. DB를 확인해주세요.")
@@ -184,7 +174,7 @@ if run_btn:
     st.markdown("#### 정치적 지지율 변동 예측")
     
     # src/aggregate.py의 함수를 호출하여 통계(stats)와 상세데이터(df_merged)를 바로 가져옴
-    stats, df_merged = get_dashboard_data(engine, current_tid)
+    stats, df_merged = get_dashboard_data(current_tid)
 
     if stats and df_merged is not None:
         # 1. 지표 카드 (동적 생성)

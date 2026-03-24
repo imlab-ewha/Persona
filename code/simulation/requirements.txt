@@ -71,7 +71,7 @@ openpyxl==3.1.5
 opt_einsum==3.4.0
 packaging==26.0
 pandas==2.3.3
-paramiko==4.0.0
+paramiko==2.12.0
 parso==0.8.6
 patsy==1.0.2
 pexpect==4.9.0

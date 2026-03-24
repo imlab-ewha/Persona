@@ -11,17 +11,33 @@ import os
 import json
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sshtunnel import SSHTunnelForwarder
+from dotenv import load_dotenv
 
-# ── DB 설정 및 엔진 생성 ─────────────────────────────────────────
-# DB_USER = os.getenv("DB_USER", "pdp")
-# DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
-# DB_HOST = os.getenv("DB_HOST", "localhost")
-# DB_PORT = os.getenv("DB_PORT", "5432")
-# DB_NAME = os.getenv("DB_NAME", "persona")
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+# DB 설정
+SSH_HOST = os.getenv("SSH_HOST")
+SSH_PORT = int(os.getenv("SSH_PORT", 4040))
+SSH_USER = os.getenv("SSH_USER")
+SSH_PASSWORD = os.getenv("SSH_PASSWORD")
 
-# engine = create_engine(
-#     f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-# )
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.getenv("DB_PORT", 5432))
+DB_USER = os.getenv("DB_USER", "pdp")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
+DB_NAME = os.getenv("DB_NAME", "persona")
+
+tunnel = SSHTunnelForwarder(
+    (SSH_HOST, SSH_PORT),
+    ssh_username=SSH_USER,
+    ssh_password=SSH_PASSWORD,
+    remote_bind_address=(DB_HOST, DB_PORT)
+)
+tunnel.start()
+
+engine = create_engine(
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@127.0.0.1:{tunnel.local_bind_port}/{DB_NAME}"
+)
 
 PARTIES = ['더불어민주당', '국민의힘', '무당층', '기타정당']
 

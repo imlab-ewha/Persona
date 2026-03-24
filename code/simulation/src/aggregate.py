@@ -86,16 +86,35 @@ import os
 import json
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sshtunnel import SSHTunnelForwarder
+from dotenv import load_dotenv
 
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 # DB 설정
+SSH_HOST = os.getenv("SSH_HOST")
+SSH_PORT = int(os.getenv("SSH_PORT", 4040))
+SSH_USER = os.getenv("SSH_USER")
+SSH_PASSWORD = os.getenv("SSH_PASSWORD")
+
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.getenv("DB_PORT", 5432))
 DB_USER = os.getenv("DB_USER", "pdp")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "persona")
 
-engine = create_engine(f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+# 3. SSH 터널 생성 및 시작
+tunnel = SSHTunnelForwarder(
+    (SSH_HOST, SSH_PORT),
+    ssh_username=SSH_USER,
+    ssh_password=SSH_PASSWORD,
+    remote_bind_address=(DB_HOST, DB_PORT)
+)
+tunnel.start()
 
+# 4. 터널링된 포트를 사용하여 SQLAlchemy 엔진 생성
+engine = create_engine(
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@127.0.0.1:{tunnel.local_bind_port}/{DB_NAME}"
+)
 def get_dashboard_data(timepoint_id):
     """
     [역할] timepoint_id를 기반으로 원본 프로필과 AI 응답을 병합하여

@@ -16,17 +16,31 @@ import re
 
 from sqlalchemy import create_engine, text
 from src.persona import build_external_context_text, PARTIES
+from sshtunnel import SSHTunnelForwarder
 
-# # ── DB 설정 및 엔진 생성 ─────────────────────────────────────────
-# DB_USER = os.getenv("DB_USER", "pdp")
-# DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
-# DB_HOST = os.getenv("DB_HOST", "localhost")
-# DB_PORT = os.getenv("DB_PORT", "5432")
-# DB_NAME = os.getenv("DB_NAME", "persona")
+# DB 설정
+SSH_HOST = os.getenv("SSH_HOST")
+SSH_PORT = int(os.getenv("SSH_PORT", 4040))
+SSH_USER = os.getenv("SSH_USER")
+SSH_PASSWORD = os.getenv("SSH_PASSWORD")
 
-# engine = create_engine(
-#     f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-# )
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_PORT = int(os.getenv("DB_PORT", 5432))
+DB_USER = os.getenv("DB_USER", "pdp")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
+DB_NAME = os.getenv("DB_NAME", "persona")
+
+tunnel = SSHTunnelForwarder(
+    (SSH_HOST, SSH_PORT),
+    ssh_username=SSH_USER,
+    ssh_password=SSH_PASSWORD,
+    remote_bind_address=(DB_HOST, DB_PORT)
+)
+tunnel.start()
+
+engine = create_engine(
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@127.0.0.1:{tunnel.local_bind_port}/{DB_NAME}"
+)
 
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPTS_DIR = os.path.join(_BASE, "prompts")
@@ -196,7 +210,7 @@ def ask_persona(client, persona, week_info, external_context, prev_support, prom
         return {"Result": "Error", "Reason": str(e)}, query
 
 # ── DB 데이터 조회 (이전 주차 컨텍스트) ──────────────────────────
-def get_prev_context_from_db(engine, target_year, target_month, target_week, poll_org_name):
+def get_prev_context_from_db(target_year, target_month, target_week, poll_org_name):
     """
     이전 주차의 외부 지표와 특정 기관의 지지율을 가져옵니다.
     정당명을 하드코딩하지 않고 PARTIES 리스트를 순회하며 자동으로 텍스트를 생성합니다.
@@ -242,7 +256,7 @@ def get_prev_context_from_db(engine, target_year, target_month, target_week, pol
     return prev_external_str, prev_support_str
 
 # ── 주차 시뮬레이션 및 JSON 저장 ──────────────────────────────────
-def simulate_week(engine, client, personas, target_row, prev_external_row, prompt_templates, model, provider="openai", query=""):
+def simulate_week(client, personas, target_row, prev_external_row, prompt_templates, model, provider="openai", query=""):
     """
     [역할] 전달받은 직전 주차 데이터를 사용하여 시뮬레이션을 수행합니다.
     """
