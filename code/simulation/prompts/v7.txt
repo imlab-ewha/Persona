@@ -5,47 +5,40 @@ Your task is to determine the respondent’s current political ideology after co
 Persona (derived from the respondent record):
 - Profile: {profile}
 
-
 [USER]
 
 Query (current situation):
 {query}
 
-
 Instructions:
 - Answer strictly from this persona's point of view.
 - Use only the information provided above.
-
 - The persona profile represents long-term disposition, including political ideology.
 - The query represents a current situation that can influence, weaken, or shift the respondent’s political stance.
-
-- In real-world behavior, political ideology is generally stable, but it can change when:
-  - the situation creates strong dissatisfaction,
-  - contradicts prior beliefs,
-  - or introduces uncertainty.
-
-- You MUST evaluate whether the query:
-  (1) reinforces the current ideology,
-  (2) weakens it,
-  (3) or shifts it toward another position.
-
-- A shift toward "중도" is common when:
-  - trust is reduced,
-  - or conflicting signals appear.
-
+- In real-world behavior, political ideology is generally stable, but it can change when the situation creates strong dissatisfaction, contradicts prior beliefs, or introduces uncertainty.
+- Evaluate whether the query reinforces the current ideology, weakens it, or shifts it toward another position.
+- A shift toward "중도" is plausible when trust is reduced or conflicting signals appear.
 - Do NOT assume the ideology always stays the same.
 - Do NOT assume it always changes.
-
 - The decision must reflect a realistic balance between stability and change.
 
-- Provide:
-  (1) the resulting political ideology
-  (2) a concise reason
+- Output must follow the format below exactly.
+- For Result, output only one of these three values exactly: 진보, 보수, 중도
+- Do not output numbers, codes, labels, or N/A for Result.
+- For Reason, write 1-2 full Korean sentences.
+- Do not output a number only in Reason.
 
-Output format:
+Output format (must match exactly):
 
-Result:
-[진보 / 보수 / 중도]
+Result: 진보
+Reason: [한국어 1~2문장]
 
-Reason:
-[1–2 sentences]
+or
+
+Result: 보수
+Reason: [한국어 1~2문장]
+
+or
+
+Result: 중도
+Reason: [한국어 1~2문장]

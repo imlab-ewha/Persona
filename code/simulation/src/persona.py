@@ -13,15 +13,15 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 # ── DB 설정 및 엔진 생성 ─────────────────────────────────────────
-DB_USER = os.getenv("DB_USER", "pdp")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "persona")
+# DB_USER = os.getenv("DB_USER", "pdp")
+# DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
+# DB_HOST = os.getenv("DB_HOST", "localhost")
+# DB_PORT = os.getenv("DB_PORT", "5432")
+# DB_NAME = os.getenv("DB_NAME", "persona")
 
-engine = create_engine(
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
+# engine = create_engine(
+#     f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# )
 
 PARTIES = ['더불어민주당', '국민의힘', '무당층', '기타정당']
 
@@ -63,7 +63,7 @@ EXTERNAL_LABELS = {
 }
 
 # ── 1. 페르소나 데이터 로딩 (동적 필터링) ──────────────────────────
-def load_demographic_data(n_sample=None, random_seed=42, filter_condition=None, limit=None) -> pd.DataFrame:
+def load_demographic_data(engine, n_sample=None, random_seed=42, filter_condition=None, limit=None) -> pd.DataFrame:
     """
     persona_profile 테이블에서 filter_condition에 맞는 데이터를 로드합니다.
     예: filter_condition="party_leaning IS NOT NULL"
@@ -90,7 +90,7 @@ def load_demographic_data(n_sample=None, random_seed=42, filter_condition=None, 
     return df
 
 # ── 2. 외부 환경 정보 로딩 ──────────────────────────────────────────
-def load_external_data() -> pd.DataFrame:
+def load_external_data(engine) -> pd.DataFrame:
     """
     external_information 테이블의 모든 주차 데이터를 가져옵니다.
     """

@@ -21,7 +21,7 @@ from src.validation import calculate_final_rates
 # ⚙️ CONFIG (연구 조건 설정)
 # ============================================================
 MODEL         = "claude-sonnet-4-6"
-PROMPT_VER    = "v5"           
+PROMPT_VER    = "v7"           
 
 # 1. 페르소나 필터 조건 (SQL WHERE 절 형식)
 FILTER_CONDITION = "party_leaning IS NOT NULL"
