@@ -30,5 +30,15 @@ Instructions:
 
 Output format (must match exactly):
 
-Result: [진보 / 보수 / 중도]
-Reason: [Korean 1–2 sentences]
+Result: 진보
+Reason: [한국어 1~2문장]
+
+or
+
+Result: 보수
+Reason: [한국어 1~2문장]
+
+or
+
+Result: 중도
+Reason: [한국어 1~2문장]

@@ -13,6 +13,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sshtunnel import SSHTunnelForwarder
 from dotenv import load_dotenv
+from src.conditioning import get_relevant_attributes
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 # DB 설정
@@ -119,8 +120,13 @@ def _is_valid(val):
     """값이 유효한지(Null/NaN/Empty 아님) 확인"""
     return pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan"
 
-def build_combined_profile_text(row: pd.Series) -> str:
+def build_combined_profile_text(row: pd.Series, relevant_attrs: list = None) -> str:
     """개별 페르소나의 자연어 프로필 생성"""
+    for col, label in DEMO_LABELS.items():
+        # 💡 relevant_attrs가 존재할 경우, 해당 리스트에 포함된 컬럼만 텍스트로 만듦
+        if relevant_attrs and col not in relevant_attrs:
+            continue
+
     parts = []
     # 기본 컬럼 처리
     for col, label in DEMO_LABELS.items():
@@ -159,15 +165,23 @@ def build_external_context_text(row: pd.Series) -> str:
     return "\n\n".join(parts) if parts else "참조할 특이 외부 정보 없음"
 
 # ── 4. 시뮬레이션용 데이터 구조체 변환 ───────────────────────────────
-def build_personas(df: pd.DataFrame) -> list[dict]:
+def build_personas(df: pd.DataFrame, query) -> list[dict]:
     """DB DataFrame을 시뮬레이션용 딕셔너리 리스트로 변환"""
+
+    relevant_attrs = None
+    if query:
+        relevant_attrs = get_relevant_attributes(query)
+        # 현재 condition.py는 빈 리스트를 반환하므로, 리스트가 비어있으면 전체 사용으로 간주
+        if not relevant_attrs:
+            relevant_attrs = None
+
     personas = []
     for _, row in df.iterrows():
         raw_party = row.get("party_leaning")
         valid_party = raw_party if _is_valid(raw_party) else None
         personas.append({
             "persona_id": str(row["persona_id"]),
-            "profile": build_combined_profile_text(row),
+            "profile": build_combined_profile_text(row, relevant_attrs=relevant_attrs),
             "region": f"{row.get('residence_region', '')} {row.get('residence_district', '')}".strip(),
             "party_leaning": valid_party,
             "source": row.get("source", "original"),

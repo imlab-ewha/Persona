@@ -64,10 +64,10 @@ prompt_templates = load_prompt(PROMPT_VER)
 # ============================================================
 # Streamlit UI 구성
 # ============================================================
-st.set_page_config(page_title="정당 지지율 시뮬레이터", page_icon="📊", layout="wide")
+st.set_page_config(page_title="여론 변화 시뮬레이터", page_icon="📊", layout="wide")
 
-st.title("페르소나 기반 정당 지지율 시뮬레이션")
-st.markdown("특정 기간의 여론 변화를 시뮬레이션합니다.")
+st.title("페르소나 기반 여론 변화 시뮬레이션")
+st.markdown("특정 사건이나 정책에 따른 여론 변화를 시뮬레이션합니다.")
 
 # --- 1. 입력부 (Sidebar) ---
 with st.sidebar:
@@ -77,7 +77,7 @@ with st.sidebar:
     target_region = st.selectbox("지역", options=["서울특별시", "부산광역시"])
     
     # 2) 페르소나 명수
-    num_personas = st.number_input("시뮬레이션 할 페르소나 명수", min_value=1, max_value=1000, value=10)
+    num_personas = st.number_input("시뮬레이션 할 페르소나 수", min_value=1, max_value=1000, value=10)
     
     # 3) 질의 (Query)
     custom_query = st.text_area("사건 입력", placeholder="발생 가능한 사건 및 전달할 메시지를 입력하세요.")
@@ -125,7 +125,7 @@ if run_btn:
         st.error(f"조건에 맞는 {target_region} 페르소나가 없습니다. DB를 확인해주세요.")
         st.stop()
         
-    personas = build_personas(demo_df)
+    personas = build_personas(demo_df, custom_query)
     
     # [Step 4] 시뮬레이션 실행 (UI 프로그레스 바 연동)
     status_text.write("AI 시뮬레이션을 진행하고 있습니다.")
