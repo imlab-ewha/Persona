@@ -13,7 +13,6 @@ nest_asyncio.apply()
 
 # src 모듈 임포트
 from src.persona import load_demographic_data, build_personas
-# simulate_week 대신 simulate_event를 가져옴
 from src.simulation2 import load_prompt, simulate_event
 
 from openai import OpenAI
@@ -106,13 +105,11 @@ if st.session_state['is_running'] and st.session_state['sim_result'] is None:
     try:
         current_tid = int(datetime.now().timestamp())
         
-        # A. 페르소나 로드
         region_kw = "서울" if target_region == "서울특별시" else "부산"
         dynamic_filter = f"residence_region LIKE '%{region_kw}%'"
         demo_df = load_demographic_data(filter_condition=dynamic_filter, limit=num_personas)
         personas = build_personas(demo_df, q_meta["query"])
         
-        # B. 🌟 변경된 시뮬레이션 함수 호출 (simulate_week -> simulate_event)
         progress_bar = st.progress(0)
         aggregated_responses = simulate_event(
             client=client,
@@ -125,7 +122,6 @@ if st.session_state['is_running'] and st.session_state['sim_result'] is None:
             st_bar=progress_bar
         )
 
-        # C. 🌟 결과 데이터 가공 (확률 루프 제거 -> 단일 응답 추출)
         analysis_data = []
         option_counts = {opt: 0 for opt in q_meta["options"]}
         option_counts["미응답"] = 0

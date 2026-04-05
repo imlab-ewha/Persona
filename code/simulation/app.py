@@ -184,7 +184,7 @@ if st.session_state['sim_result'] is not None:
     st.markdown("#### 시뮬레이션 정보 요약")
     info_col1, info_col2 = st.columns(2)
     info_col1.info(f"**지역:** {res['region']}\n\n**명수:** {res['count']}명")
-    info_col2.success(f"**질의:** {res['query']}")
+    info_col2.success(f"**사건:** {res['query']}")
     st.divider()
 
     st.markdown("#### 정치적 지지율 변동 예측")
