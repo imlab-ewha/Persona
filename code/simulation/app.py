@@ -88,7 +88,7 @@ st.markdown("""
 with st.sidebar:
     st.header("시뮬레이션 설정")
     target_region = st.selectbox("지역", options=["서울특별시", "부산광역시"], disabled=lock_ui)
-    num_personas = st.number_input("시뮬레이션 할 페르소나 인원", min_value=1, max_value=30, value=10, disabled=lock_ui)
+    num_personas = st.number_input("시뮬레이션 할 페르소나 인원", min_value=1, max_value=30, value=25, disabled=lock_ui)
     custom_query = st.text_area("사건 입력", placeholder="발생 가능한 사건 및 전달할 메시지를 입력하세요.", disabled=lock_ui)
     run_btn = st.button("시뮬레이션 실행", use_container_width=True, disabled=lock_ui, type='primary')
 
