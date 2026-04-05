@@ -6,7 +6,8 @@ simulation.py
 - 모든 페르소나의 응답을 {질문: {ID: 답변}} 형태의 JSON으로 통합 저장
 - persona_response_history 테이블에 timepoint_id별 단일 행 적재
 """
-
+import ast
+import streamlit as st
 import os
 import json
 import time
@@ -14,11 +15,11 @@ import pandas as pd
 from tqdm import tqdm
 import re
 
-
 from sqlalchemy import create_engine, text
 from src.persona import build_external_context_text, PARTIES
 from sshtunnel import SSHTunnelForwarder
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 # DB 설정
@@ -47,6 +48,14 @@ engine = create_engine(
 
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPTS_DIR = os.path.join(_BASE, "prompts")
+
+def make_client(provider="openai"):
+    if provider == "anthropic":
+        from anthropic import Anthropic
+        return Anthropic()
+    else:
+        from openai import OpenAI
+        return OpenAI()
 
 def get_prev_week_external_data(engine, year, month, week):
     """
@@ -94,124 +103,11 @@ class _SafeDict(dict):
     def __missing__(self, key): return "{" + key + "}"
 
 def _fill(template: str, **kwargs):
-    return template.format_map(_SafeDict(**kwargs))
-
-# ── 개별 페르소나 LLM 호출 ────────────────────────────────────
-# def ask_persona(client, persona, week_info, external_context, prev_support, prompt_templates, model, provider="openai"):
-#     fmt = dict(
-#         profile=persona.get("profile", ""),
-#         region=persona.get("region", ""),
-#         week_info=week_info,
-#         issues=external_context,
-#         prev_support=prev_support
-#     )
-
-#     system_msg = _fill(prompt_templates["system"], **fmt)
-
-#     # 💡 [프롬프트 스위치 로직]
-#     if persona.get("party_leaning"):
-#         user_msg = _fill(prompt_templates["user"], **fmt)
-#         try:
-#             query_text = user_msg.split("Question:")[1].split("Options:")[0].strip()
-#         except:
-#             query_text = "어느 정당을 지지하십니까?"
-#     else:
-#         # 값이 없는 경우 (혹은 필터링에서 제외된 경우 기본 질문)
-#         user_msg = (
-#             f"조사 시기: {week_info}\n"
-#             f"전주 주요 정치 이슈: {external_context}\n\n"
-#             f"전주 지지율: {prev_support}\n"
-#             f"위 유권자가 현재 지지하는 정당은 무엇입니까?\n"
-#             f"반드시 다음 중 하나만 답하세요: 더불어민주당 / 국민의힘 / 무당층 / 기타정당"
-#         )
-#         query_text = "어느 정당을 지지하십니까?"
-#     messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}]
-
-#     try:
-#         if provider == "anthropic":
-#             response = client.messages.create(
-#                 model=model, max_tokens=100, system=system_msg,
-#                 messages=[{"role": "user", "content": user_msg}]
-#             )
-#             answer = response.content[0].text.strip()
-#         else:
-#             response = client.chat.completions.create(
-#                 model=model, max_tokens=100, messages=messages
-#             )
-#             answer = response.choices[0].message.content.strip()
-        
-#         # 정당 추출 (집계용)
-#         final_party = "무당층"
-#         for party in PARTIES:
-#             if party in answer:
-#                 final_party = party
-#                 break
-        
-#         return final_party, query_text, answer # (집계용정당, 질문키, 원문답변)
-
-#     except Exception as e:
-#         print(f"Error calling LLM: {e}")
-#         return "무당층", query_text, "응답 실패"
-# ── 개별 페르소나 LLM 호출 ────────────────────────────────────
-def ask_persona(client, persona, week_info, external_context, prev_support, prompt_templates, model, query, provider="openai"):
-    fmt = dict(
-        profile=persona.get("profile", ""),
-        region=persona.get("region", ""),
-        week_info=week_info,
-        issues=external_context,
-        prev_support=prev_support,
-        query=query,
-        party_leaning=persona.get("party_leaning", "")
-    )
-
-    system_msg = _fill(prompt_templates["system"], **fmt)
-    user_msg = _fill(prompt_templates["user"], **fmt)
-
-    # 기록용 질문 텍스트는 입력받은 query 그대로 사용
-    query_text = query
-
-    messages = [
-        {"role": "system", "content": system_msg},
-        {"role": "user", "content": user_msg}
-    ]
-
-    try:
-        if provider == "anthropic":
-            response = client.messages.create(
-                model=model,
-                max_tokens=400,
-                system=system_msg,
-                messages=[{"role": "user", "content": user_msg}]
-            )
-            answer = response.content[0].text.strip()
-        else:
-            response = client.chat.completions.create(
-                model=model,
-                max_tokens=400,
-                messages=messages
-            )
-            full_answer = response.choices[0].message.content.strip()
-
-        # 💡 [핵심] 정규표현식으로 Result와 Reason 섹션 추출
-        # Result: 이후 문구와 Reason: 이후 문구를 각각 캡처합니다.
-        result_match = re.search(r"Result:\s*(.*)", answer, re.IGNORECASE)
-        reason_match = re.search(r"Reason:\s*(.*)", answer, re.IGNORECASE)
-
-        # 결과가 없으면 원문 그대로, 있으면 텍스트만 추출
-        res_val = result_match.group(1).strip() if result_match else "N/A"
-        rea_val = reason_match.group(1).strip() if reason_match else answer
-
-        # 💡 사용자가 원하는 딕셔너리 형태로 구성
-        structured_response = {
-            "Result": res_val.replace("[", "").replace("]", ""), # [진보] -> 진보
-            "Reason": rea_val
-        }
-
-        return structured_response, query
-    except Exception as e:
-        print(f"Error calling LLM: {e}")
-        return {"Result": "Error", "Reason": str(e)}, query
-
+    for k, v in kwargs.items():
+        template = template.replace("{" + k + "}", str(v))
+    return template
+    
+    
 # ── DB 데이터 조회 (이전 주차 컨텍스트) ──────────────────────────
 def get_prev_context_from_db(target_year, target_month, target_week, poll_org_name):
     """
@@ -258,48 +154,261 @@ def get_prev_context_from_db(target_year, target_month, target_week, poll_org_na
 
     return prev_external_str, prev_support_str
 
-# ── 주차 시뮬레이션 및 JSON 저장 ──────────────────────────────────
-def simulate_week(client, personas, target_row, prev_external_row, prompt_templates, model, provider="openai", query=""):
-    """
-    [역할] 전달받은 직전 주차 데이터를 사용하여 시뮬레이션을 수행합니다.
-    """
-    t_year, t_month, t_week = int(target_row['year']), int(target_row['month']), int(target_row['week'])
-    target_info = f"{t_year}년 {t_month}월 {t_week}주차"
+import re
+
+def get_news_window_5weeks(engine, year, month, week):
+    """DB에서 5주치 뉴스를 가져와 YYYY-MM-DD 형식으로 클렌징하여 반환"""
+    query = text("""
+        SELECT year, month, week, news_text 
+        FROM public.external_information
+        WHERE (year < :y) 
+           OR (year = :y AND month < :m)
+           OR (year = :y AND month = :m AND week <= :w)
+        ORDER BY year DESC, month DESC, week DESC
+        LIMIT 5;
+    """)
+    with engine.connect() as conn:
+        df = pd.read_sql(query, conn, params={"y": year, "m": month, "w": week})
     
-    # 1. 이미 main에서 검증된 직전 주차 데이터를 텍스트로 빌드
-    external_context = build_external_context_text(prev_external_row)
-    persona_pbar = tqdm(
-        personas, 
-        desc=f"    ㄴ {target_info} 페르소나 응답 수집", 
-        leave=False, # 주차가 끝나면 바를 숨김
-        position=1   # 바깥쪽 바(0) 아래에 위치하도록 설정
-    )
-    # 2. 응답 수집
-    aggregated_responses = {}
-    for persona in persona_pbar:
-        res_obj, query_key = ask_persona(
-            client, persona, 
-            week_info=target_info, 
-            external_context=external_context, 
-            prev_support="", # 지지율 대조는 분석 단계에서 처리
-            prompt_templates=prompt_templates, 
-            model=model, provider=provider,
-            query=query
-        )
+    news_window = {}
+    for _, row in df.iterrows():
+        cur_y = row['year']
+        key = f"{cur_y}_{row['month']}_{row['week']}"
+        lines = row['news_text'].split('\n')
+        cleaned_items = []
+        last_date = None
+        
+        for line in lines:
+            item = line.strip().strip("- ")
+            if not item: continue
+            date_match = re.match(r"^(\d{1,2})/(\d{1,2})", item)
+            if date_match:
+                m, d = int(date_match.group(1)), int(date_match.group(2))
+                last_date = f"{cur_y}-{m:02d}-{d:02d}"
+                content = item[len(date_match.group(0)):].strip()
+            else:
+                content = item
+                if not last_date: last_date = f"{cur_y}-{row['month']:02d}-??"
+            cleaned_items.append(f"{last_date} {content}")
+        news_window[key] = cleaned_items
+    # print("news: ", news_window)
+    return news_window
 
-        p_id = persona["persona_id"]
-        if p_id not in aggregated_responses:
-            aggregated_responses[p_id] = {}
+def evaluate_and_store_importance(client, persona, news_window, year, month, week, model, engine, provider="openai"):
+    """
+    [역할] 페르소나가 뉴스를 읽고 본인의 프로필에 비추어 중요도(score)와 생각(thinking)을 생성합니다.
+    """
+    p_id = persona["persona_id"]
+    with engine.connect() as conn:
+        res = conn.execute(
+            text("SELECT important_score FROM public.persona_profile_test WHERE persona_id = :pid"),
+            {"pid": p_id}
+        ).fetchone()
+    
+    existing_scores = res[0] if res and res[0] else {}
+    if isinstance(existing_scores, str):
+        existing_scores = json.loads(existing_scores)
+
+    # DB에 없는 주차만 API 호출하여 기억 생성
+    missing_news_bundle = {w: items for w, items in news_window.items() if w not in existing_scores}
+    if not missing_news_bundle:
+        return existing_scores
+
+    v10_templates = load_prompt("v10_readNews")
+    fmt = {
+        "persona_profile": persona.get('profile', ''),
+        "reference_week": f"{year}_{month}_{week}",
+        "external_information": json.dumps(missing_news_bundle, ensure_ascii=False, indent=2)
+    }
+    
+    system_msg = _fill(v10_templates["system"], **fmt)
+    user_msg = _fill(v10_templates["user"], **fmt)
+
+    try:
+        if provider == "anthropic":
+            resp = client.messages.create(
+                model=model, max_tokens=4000, system=system_msg,
+                messages=[{"role": "user", "content": user_msg}], temperature=0.0
+            )
+            ans = resp.content[0].text.strip()
+        else:
+            resp = client.chat.completions.create(
+                model=model, messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}],
+                response_format={"type": "json_object"}, temperature=0.0
+            )
+            ans = resp.choices[0].message.content.strip()
+        
+        ans_clean = re.sub(r'^```json\s*|\s*```$', '', ans, flags=re.MULTILINE).strip()
+        new_data = json.loads(ans_clean)
+        
+        existing_scores.update(new_data)
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE public.persona_profile_test SET important_score = :js WHERE persona_id = :pid"),
+                {"js": json.dumps(existing_scores, ensure_ascii=False), "pid": p_id}
+            )
+        return existing_scores
+    except Exception as e:
+        return existing_scores
+
+def build_decayed_news_context(important_score, news_window_keys, target_year, target_month, target_week):
+    """
+    [역할] 5주치 뉴스 중 가중치(시간 감쇠)가 가장 높은 5개의 'thinking'을 합쳐 반환합니다.
+    """
+    decay_factor, scored_items = 0.8, []
+    # 주차 간 거리 계산 함수
+    def get_dist(y, m, w): return (target_year - y) * 48 + (target_month - m) * 4 + (target_week - w)
+
+    for wk in news_window_keys:
+        if wk not in important_score: continue
+        try:
+            y, m, w = map(int, wk.split('_'))
+            dist = get_dist(y, m, w)
+            for news_text, data in important_score[wk].items():
+                raw_score = float(data.get('score', 0))
+                # 시간 감쇠 적용: 먼 과거일수록 점수가 낮아짐
+                decayed_score = raw_score * (decay_factor ** max(0, dist))
+                scored_items.append({
+                    "thinking": data.get('thinking', ''), 
+                    "final_score": decayed_score
+                })
+        except: continue
+        
+    # 최종 점수 기준 내림차순 정렬 후 상위 5개 추출
+    top_5 = sorted(scored_items, key=lambda x: x['final_score'], reverse=True)[:5]
+    # print('top 5:', top_5)
+    return "\n".join([f"- {i['thinking']}" for i in top_5])
+
+def ask_persona(client, persona, query, options, external_context, news_thinking, prompt_templates, model, provider="anthropic"):
+    p_id = persona.get("persona_id", "Unknown")
+    fmt = {
+        "profile": persona.get('profile', ''),
+        "news_thinking": news_thinking if news_thinking else "No specific news memories.",
+        "context": external_context, 
+        "query": query,
+        "options": "\n".join([f"- {opt}" for opt in options])
+    }
+    sys, usr = _fill(prompt_templates["system"], **fmt), _fill(prompt_templates["user"], **fmt)
+
+    try:
+        if provider == "anthropic":
+            ans = client.messages.create(model=model, max_tokens=2000, system=sys, messages=[{"role": "user", "content": usr}], temperature=0.0).content[0].text
+        else:
+            ans = client.chat.completions.create(model=model, max_tokens=2000, messages=[{"role": "system", "content": sys}, {"role": "user", "content": usr}], temperature=0.0).choices[0].message.content
+        
+        # 🛡️ [강력한 파싱] unmatched ')' 에러 방지용 슬라이싱
+        ans_clean = re.sub(r'```json|```', '', ans).strip()
+        start, end = ans_clean.find('{'), ans_clean.rfind('}')
+        result_map, reason_val = {opt: "0%" for opt in options}, "Parsing failed."
+
+        if start != -1 and end != -1:
+            json_str = ans_clean[start:end+1]
+            try:
+                data = json.loads(json_str)
+            except:
+                try: data = ast.literal_eval(json_str)
+                except Exception as e:
+                    print(f"   ⚠️ [ID: {p_id}] 파싱 실패 원문: {json_str}")
+                    data = {}
             
-        # 💡 질문 키 아래에 {"Result": "...", "Reason": "..."} 객체가 저장됨
-        aggregated_responses[p_id][query_key] = res_obj
+            if data:
+                # print(data)
+                reason_val = data.get("Reason", data.get("reason", "No reason."))
+                for opt in options:
+                    pure = re.sub(r'^[0-9.\s]+', '', opt).strip()
+                    val = data.get(pure) or data.get(opt)
+                    if val is not None: result_map[opt] = f"{val}%" if isinstance(val, (int, float)) else str(val)
+        
+        return {"Result": result_map, "Reason": reason_val}, query
+    except Exception as e:
+        return {"Result": {"Error": "100%"}, "Reason": str(e)}, query
 
-    # DB 저장
-    result_df = pd.DataFrame([{
-        "timepoint_id": int(target_row['timepoint_id']),
-        "response": json.dumps(aggregated_responses, ensure_ascii=False),
-        "timestamp": pd.Timestamp.now()
-    }])
-    result_df.to_sql("persona_response_history", engine, if_exists='append', index=False, schema='public')
+def process_persona_simulation(client, persona, year, month, week, news_window, 
+                               prompt_templates, model, query, options, provider, 
+                               external_context, engine, use_news_thinking=True): # 👈 명칭 변경
+    """
+    [데이터 흐름]
+    - use_news_thinking이 True일 때만 DB에서 과거 뉴스 기억(Thinking)을 추출합니다.
+    - False일 경우 과거 기억 없이 '현재 사건(context)'만 보고 판단합니다.
+    """
+    
+    if use_news_thinking:
+        # 1. 5주치 뉴스에 대한 페르소나의 기억(thinking) 및 점수(score) 로드/생성
+        mems = evaluate_and_store_importance(client, persona, news_window, year, month, week, model, engine, provider)
+        
+        # 2. Score + 시간 감쇠를 통해 가장 지배적인 생각 Top 5 추출 -> {news_thinking}
+        news_thinking = build_decayed_news_context(mems, list(news_window.keys()), year, month, week)
+    else:
+        # 과거 기억을 사용하지 않을 경우
+        news_thinking = "No specific thoughts remembered from past news."
 
-    return personas
+    # 3. 최종 시뮬레이션: {news_thinking} 상태에서 새로운 {context}를 만남
+    res_obj, _ = ask_persona(
+        client=client, persona=persona, query=query, options=options,
+        external_context=external_context, # 프롬프트의 {context}로 매핑
+        news_thinking=news_thinking,       # 프롬프트의 {news_thinking}으로 매핑
+        prompt_templates=prompt_templates, model=model, provider=provider
+    )
+
+    return persona["persona_id"], res_obj
+
+def importance_worker(client, persona, news_window, year, month, week, model, engine, provider="openai"):
+    """
+    기사별 importance score 생성만 수행
+    반환:
+        persona_id, importance_scores
+    """
+    p_id = persona["persona_id"]
+    try:
+        mems = evaluate_and_store_importance(
+            client=client,
+            persona=persona,
+            news_window=news_window,
+            year=year,
+            month=month,
+            week=week,
+            model=model,
+            engine=engine,
+            provider=provider
+        )
+        return p_id, mems
+    except Exception as e:
+        return p_id, {"__error__": str(e)}
+
+
+def simulate_week(client, personas, target_info, external_context, prompt_templates, 
+                  model, query, options, engine, provider="openai", st_bar=None, 
+                  use_news_thinking=True): # 👈 명칭 변경
+    y, m, w = map(int, target_info.split('-'))
+    
+    # news_window 초기화 (기본값 빈 딕셔너리)
+    news_window = {}
+    
+    # 💡 [핵심] 뉴스 반영 모드이고 엔진이 존재할 때만 DB에서 뉴스 윈도우를 가져옴
+    if use_news_thinking and engine is not None:
+        news_window = get_news_window_5weeks(engine, y, m, w)
+    
+    aggregated_responses = {}
+    total = len(personas)
+    MAX_WORKERS = 10
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(
+                process_persona_simulation, 
+                client, persona, y, m, w, news_window, prompt_templates, 
+                model, query, options, provider, 
+                external_context, engine, use_news_thinking
+            ): persona for persona in personas
+        }
+        
+        for i, f in enumerate(as_completed(futures)):
+            try:
+                p_id, res = f.result()
+                if p_id not in aggregated_responses: aggregated_responses[p_id] = {}
+                aggregated_responses[p_id][query] = res
+                if st_bar: st_bar.progress((i + 1) / total)
+            except Exception as e:
+                st.error(f"시뮬레이션 중 오류 발생: {e}")
+                
+    return aggregated_responses

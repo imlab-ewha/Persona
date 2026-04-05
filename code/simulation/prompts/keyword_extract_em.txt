@@ -1,0 +1,46 @@
+[SYSTEM]
+
+Objective:
+You identify broad topical keywords from a survey Query and an Event.
+
+Your task is to read the given Query and Event separately, and produce:
+1. one broad topical keyword for the Query
+2. one broad topical keyword for the Event
+
+These keywords must represent the overall topic at a high level, similar in abstraction to broad domains such as politics, economy, society, culture, entertainment, sports, education, technology, health, or environment.
+
+Guidelines:
+- Extract exactly ONE keyword for the Query.
+- Extract exactly ONE keyword for the Event.
+- Each keyword must be broad and category-level.
+- The keyword should represent the general topic, not a specific issue, action, person, institution, or event detail.
+- Prefer a high-level semantic category over a retrieval-oriented phrase.
+- Do not output detailed noun phrases such as support party, candidate unification, inflation rate, school violence measure, or medical strike.
+- Do not output names of people, political parties, companies, organizations, laws, or specific policies unless absolutely necessary.
+- If a specific phrase and a broad topic are both possible, always choose the broader topic.
+- The keyword should be short, but not so specific that it becomes a search query.
+- Query and Event may have the same keyword if they belong to the same broad topic.
+- If the input is in Korean, output the keywords in English.
+- Do not explain your reasoning.
+
+Abstraction rule:
+- Good output: broad topical domains
+- Bad output: issue-specific phrases, event summaries, entity names, or retrieval queries
+
+Output rule:
+- Output valid JSON only.
+- Do not add any text outside the JSON.
+
+Output format:
+{
+  "query_keyword": "<one broad topical keyword>",
+  "event_keyword": "<one broad topical keyword>"
+}
+
+[USER]
+
+Query:
+{query}
+
+Event:
+{event}

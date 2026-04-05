@@ -9,14 +9,13 @@ persona.py
 
 import os
 import json
-import ast
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sshtunnel import SSHTunnelForwarder
 from dotenv import load_dotenv
-from src.conditioning import get_relevant_attributes
+from src.openlab.conditioning import get_relevant_attributes
 
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 # DB 설정
 SSH_HOST = os.getenv("SSH_HOST")
 SSH_PORT = int(os.getenv("SSH_PORT", 4040))
@@ -80,80 +79,17 @@ EXTERNAL_LABELS = {
     "news_text": "주요 뉴스 이슈"
 }
 
-# ── [추가] 설문조사 파일 경로 및 캐싱 변수 ──────────────────────────
-SURVEY_CSV_PATH = "/home/imlab/Persona/data/processed2/persona_profile_survey.csv"
-SURVEY_JSON_PATH = "/home/imlab/Persona/data/processed2/survey.json"
-
-_SURVEY_DF = None
-_SURVEY_MAPPING = None
-
-def get_survey_data():
-    """CSV와 JSON 데이터를 단 한 번만 로드하여 반환합니다 (캐싱)"""
-    global _SURVEY_DF, _SURVEY_MAPPING
-    if _SURVEY_DF is None:
-        _SURVEY_DF = pd.read_csv(SURVEY_CSV_PATH, low_memory=False)
-    if _SURVEY_MAPPING is None:
-        if os.path.exists(SURVEY_JSON_PATH):
-            with open(SURVEY_JSON_PATH, "r", encoding="utf-8") as f:
-                _SURVEY_MAPPING = json.load(f)
-        else:
-            _SURVEY_MAPPING = {}
-    return _SURVEY_DF, _SURVEY_MAPPING
-
-def extract_survey_context(persona_id: str, survey_df: pd.DataFrame, survey_mapping: dict) -> dict:
-    """특정 persona_id의 설문 데이터를 조회하여 키워드별 자연어 문장 딕셔너리로 반환"""
-    persona_row = survey_df[survey_df['persona_id'] == persona_id]
-    if persona_row.empty:
-        return {}
-
-    row_data = persona_row.iloc[0]
-    context_by_keyword = {}
-
-    for question, mapping_data in survey_mapping.items():
-        if question not in row_data.index:
-            continue
-
-        keyword = mapping_data.get("keyword", "기타")
-        descriptions_dict = mapping_data.get("description", {})
-        raw_val = row_data[question]
-
-        if pd.isna(raw_val) or str(raw_val).strip().lower() == 'nan':
-            continue
-
-        val = str(raw_val).strip()
-        if not val:
-            continue
-
-        answers = []
-        if val.startswith('[') and val.endswith(']'):
-            try:
-                parsed_list = ast.literal_eval(val)
-                if isinstance(parsed_list, list):
-                    answers.extend([str(item).strip() for item in parsed_list if str(item).strip()])
-                else:
-                    answers.append(val)
-            except:
-                clean_val = val[1:-1]
-                answers.extend([x.strip() for x in clean_val.split(',') if x.strip()])
-        else:
-            answers.append(val)
-
-        for ans in answers:
-            if ans in descriptions_dict:
-                nl_sentence = descriptions_dict[ans]
-                if keyword not in context_by_keyword:
-                    context_by_keyword[keyword] = []
-                context_by_keyword[keyword].append(nl_sentence)
-    print(context_by_keyword)
-    return context_by_keyword
-
-
 # ── 1. 페르소나 데이터 로딩 (동적 필터링) ──────────────────────────
 def load_demographic_data(n_sample=None, random_seed=42, filter_condition=None, limit=None) -> pd.DataFrame:
+    """
+    persona_profile 테이블에서 filter_condition에 맞는 데이터를 로드합니다.
+    예: filter_condition="party_leaning IS NOT NULL"
+    """
     query = "SELECT * FROM public.persona_profile_test"
 
     if filter_condition and filter_condition.strip():
         query += f" WHERE {filter_condition}"
+    # query += " ORDER BY persona_id ASC"
     query += " ORDER BY RANDOM()"
 
     if limit:
@@ -172,20 +108,28 @@ def load_demographic_data(n_sample=None, random_seed=42, filter_condition=None, 
 
 # ── 2. 외부 환경 정보 로딩 ──────────────────────────────────────────
 def load_external_data(engine) -> pd.DataFrame:
+    """
+    external_information 테이블의 모든 주차 데이터를 가져옵니다.
+    """
     query = "SELECT * FROM public.external_information ORDER BY timepoint_id;"
     with engine.connect() as conn:
         return pd.read_sql(text(query), conn)
 
 # ── 3. 텍스트 변환 로직 (Null-Skip 적용) ────────────────────────────
 def _is_valid(val):
+    """값이 유효한지(Null/NaN/Empty 아님) 확인"""
     return pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan"
 
 def build_combined_profile_text(row: pd.Series, relevant_attrs: list = None) -> str:
-    parts = []
+    """개별 페르소나의 자연어 프로필 생성"""
     for col, label in DEMO_LABELS.items():
+        # 💡 relevant_attrs가 존재할 경우, 해당 리스트에 포함된 컬럼만 텍스트로 만듦
         if relevant_attrs and col not in relevant_attrs:
             continue
-        
+
+    parts = []
+    # 기본 컬럼 처리
+    for col, label in DEMO_LABELS.items():
         val = row.get(col)
         if _is_valid(val):
             if col == "has_health_insurance":
@@ -193,11 +137,22 @@ def build_combined_profile_text(row: pd.Series, relevant_attrs: list = None) -> 
                 parts.append(f"{label}: {val_str}")
             else:
                 parts.append(f"{label}: {val}")
-                
-    # 기존에 row.get("survey")로 파싱하던 부분은 삭제했습니다. (CSV+JSON 기반으로 고도화되었으므로)
+
+    # JSON Survey 데이터 처리
+    survey = row.get("survey")
+    if pd.notna(survey):
+        if isinstance(survey, str):
+            try: survey = json.loads(survey)
+            except: survey = {}
+        if isinstance(survey, dict):
+            for q, a in survey.items():
+                if _is_valid(a):
+                    parts.append(f"{q}: {a}")
+
     return ", ".join(parts)
 
 def build_external_context_text(row: pd.Series) -> str:
+    """주차별 외부 환경 컨텍스트 생성"""
     parts = []
     for col, label in EXTERNAL_LABELS.items():
         val = row.get(col)
@@ -206,16 +161,17 @@ def build_external_context_text(row: pd.Series) -> str:
                 parts.append(f"[{label}]\n{val}")
             else:
                 parts.append(f"{label}: {val}")
-    
+
     return "\n\n".join(parts) if parts else "참조할 특이 외부 정보 없음"
 
 # ── 4. 시뮬레이션용 데이터 구조체 변환 ───────────────────────────────
 def build_personas(df: pd.DataFrame, query) -> list[dict]:
-    survey_df, survey_mapping = get_survey_data()
-    
+    """DB DataFrame을 시뮬레이션용 딕셔너리 리스트로 변환"""
+
     relevant_attrs = None
     if query:
         relevant_attrs = get_relevant_attributes(query)
+        # 현재 condition.py는 빈 리스트를 반환하므로, 리스트가 비어있으면 전체 사용으로 간주
         if not relevant_attrs:
             relevant_attrs = None
 
@@ -223,20 +179,9 @@ def build_personas(df: pd.DataFrame, query) -> list[dict]:
     for _, row in df.iterrows():
         raw_party = row.get("party_leaning")
         valid_party = raw_party if _is_valid(raw_party) else None
-        
-        persona_id = str(row["persona_id"])
-        
-        # 🌟 페르소나 ID별로 키워드 매핑 딕셔너리 추출
-        survey_context_dict = extract_survey_context(
-            persona_id=persona_id, 
-            survey_df=survey_df, 
-            survey_mapping=survey_mapping
-        )
-        
         personas.append({
-            "persona_id": persona_id,
+            "persona_id": str(row["persona_id"]),
             "profile": build_combined_profile_text(row, relevant_attrs=relevant_attrs),
-            "survey_context": survey_context_dict, # 🌟 요구하신 {"technology": ["...", "..."]} 형태의 데이터
             "region": f"{row.get('residence_region', '')} {row.get('residence_district', '')}".strip(),
             "party_leaning": valid_party,
             "source": row.get("source", "original"),

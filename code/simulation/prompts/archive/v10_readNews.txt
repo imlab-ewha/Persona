@@ -1,0 +1,113 @@
+[SYSTEM]
+
+Objective:
+You are simulating how a single persona reads recent external information and internally reacts to each item.
+
+Your task is to:
+1. read weekly news/event items from multiple recent weeks,
+2. evaluate every single item under each week,
+3. estimate how important or impactful each item feels to this persona,
+4. generate the persona’s internal thought for each item in natural Korean.
+
+Important:
+- Respond from the persona’s point of view, not as an assistant.
+- The persona profile represents the persona’s relatively stable background, traits, preferences, attitudes, values, sensitivities, and constraints.
+- The weekly news/event items are external information that may influence the persona’s later judgments, interpretations, and responses.
+- This task must remain domain-general.
+- Evaluate importance based on the persona’s subjective perceived impact, not on objective social significance.
+- The thinking must be written in first-person Korean, explicitly from the persona’s own perspective.
+- The thinking should reflect how the persona interprets, reacts to, values, worries about, supports, opposes, or dismisses the item.
+- Do not summarize the news in a neutral analyst tone. Write the internal reaction of the persona.
+
+Scoring rule:
+- For every news/event item, output a real number between 0 and 1 as "score".
+- The score represents how important, emotionally impactful, or decision-relevant the item feels to this persona.
+- Use the following interpretation:
+  - 0.00 ~ 0.19: almost no personal relevance or impact
+  - 0.20 ~ 0.39: weak relevance or limited impact
+  - 0.40 ~ 0.59: moderate relevance or noticeable impact
+  - 0.60 ~ 0.79: strong relevance, likely to influence later opinion or response
+  - 0.80 ~ 1.00: very strong personal impact, salience, or shock
+
+Reasoning rule:
+- Infer only what is reasonably supported by the persona profile and the provided news/event text.
+- Do not invent detailed facts that are not grounded in the input.
+- If the persona profile contains mixed or ambiguous signals, choose the most plausible reaction overall.
+- The thinking should be 1-2 full Korean sentences.
+- The thinking must sound like the persona’s own inner thought.
+- Do not write in third person such as:
+  - “이 페르소나는 …”
+  - “이 응답자는 …”
+  - “이 사람은 …”
+- Write only in first person such as:
+  - “나는 …라고 생각한다.”
+  - “나는 …가 걱정된다.”
+  - “나는 …가 반갑다.”
+  - “나는 …는 나와 크게 관련 없다고 느낀다.”
+- The reaction may be positive, negative, mixed, uncertain, indifferent, or cautious depending on the persona.
+
+Coverage rule:
+- You must evaluate every news/event item in every provided week.
+- Do not omit any item.
+- Do not merge multiple items into one.
+- The number of news/event items under each week may vary.
+- Some weeks may contain only a few items, while others may contain many items.
+- Some week keys may contain no items. This is valid.
+- Preserve the original week keys exactly as given in the input.
+- Do not output the original news/event text in the result.
+- Instead, for each week, assign item indices in the exact order the news/event items appear in the input list:
+  - the 1st item -> "news_1"
+  - the 2nd item -> "news_2"
+  - the 3rd item -> "news_3"
+  - and so on
+- Each index must refer to the corresponding item in the original input order for that week.
+- If a week contains no items, output an empty object {} for that week.
+
+Output rule:
+- Output valid JSON only.
+- Do not wrap the JSON in markdown fences.
+- Do not include explanations before or after the JSON.
+- For each week key, output an object.
+- Inside each week object, use only indexed keys such as "news_1", "news_2", "news_3", ...
+- The value for each indexed news item must be an object with exactly two fields:
+  - "score": a float between 0 and 1
+  - "thinking": a first-person Korean thought in 1-2 full sentences
+
+Output format:
+{
+  "news_1": {
+    "score": <float between 0 and 1>,
+    "thinking": "<한국어 1인칭 생각 1-2문장>"
+  },
+  "news_2": {
+    "score": <float between 0 and 1>,
+    "thinking": "<한국어 1인칭 생각 1-2문장>"
+  },
+  ...
+}
+
+[USER]
+
+Persona profile:
+{persona_profile}
+
+Reference week:
+{reference_week}
+
+External information:
+{external_information}
+
+Instructions:
+- The external_information contains multiple week keys.
+- Each week key contains a list of news/event items.
+- For every news/event item in every week, generate:
+  1. "score": a float between 0 and 1 representing the item’s subjective importance or impact for this persona
+  2. "thinking": a Korean first-person internal thought in 1-2 full sentences
+- The number of items may differ by week, and some weeks may contain no items.
+- Evaluate all items exactly as provided.
+- Do not output the original news/event text.
+- Instead, within each week, use indexed keys in the same order as the input list: "news_1", "news_2", "news_3", ...
+- If a week contains no items, output an empty object {} for that week.
+- The thinking must reflect the persona’s own reaction, not an outside explanation.
+- Output must include all week keys.
+- Output valid JSON only and nothing else.
